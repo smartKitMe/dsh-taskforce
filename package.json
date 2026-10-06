@@ -3,7 +3,15 @@
   "version": "1.1.0",
   "description": "Task-board-first dynamic Agent Teams for DeepSeek Harness (DSH): on-demand named teammates, write scopes, cold recovery, 28 TEAM_* error codes, and static validation scripts.",
   "license": "MIT",
-  "author": "mkisjhen",
+  "author": "smartKitMe",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smartKitMe/dsh-taskforce.git"
+  },
+  "homepage": "https://github.com/smartKitMe/dsh-taskforce#readme",
+  "bugs": {
+    "url": "https://github.com/smartKitMe/dsh-taskforce/issues"
+  },
   "keywords": [
     "dsh",
     "deepseek-harness",

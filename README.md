@@ -11,6 +11,8 @@
 
 > ⚠️ **非官方项目**：本项目是第三方 DSH preset，与 DeepSeek **无隶属关系**，未经其审核或背书。
 > 文档中出现的 `@deepseek-ai/dsh-*` 名称仅用于说明依赖关系。
+>
+> 仓库：<https://github.com/smartKitMe/dsh-taskforce> · License: [MIT](LICENSE) · 版本 1.1.0
 
 本 bundle 只声明一个 preset，内容分三层：
 
