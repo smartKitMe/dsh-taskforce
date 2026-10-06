@@ -38,6 +38,11 @@
  *           both canonical values and passes unless --strict-member-shorthand is set.
  *   V12 the delivery directory contains no .work/ (checked after integration)
  *
+ * The DSH home is resolved exactly like DSH's own @deepseek-ai/dsh-home-paths:
+ *     --dsh-home  >  $DSH_HOME (blank counts as unset)  >  ~/.dsh
+ * The resolved home and its source are printed, because V7 checks a path under it and a
+ * wrong home would silently check the wrong directory.
+ *
  * Usage:
  *   node scripts/validate-preset.mjs [--bundle DIR] [--dsh-home DIR]
  *                                    [--js-yaml DIR] [--warn-only V10,V11,V12]
@@ -47,6 +52,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
@@ -93,6 +99,27 @@ const skillMd = path.join(bundle, 'skills', 'agent-team-protocol', 'SKILL.md');
 const readmePath = path.join(bundle, 'README.md');
 const isWindows = process.platform === 'win32';
 
+// ---- DSH home resolution: mirrors @deepseek-ai/dsh-home-paths -----------------------
+// Precedence: explicit override > $DSH_HOME > ~/.dsh. An empty or whitespace-only
+// $DSH_HOME counts as unset (a blank override must never resolve the home to the cwd),
+// and a leading `~`, `~/` or `~\` expands against the OS home. Read from the shipped DSH
+// source, so this is DSH's own rule rather than a guess -- requiring an exported
+// DSH_HOME would break every default Linux/macOS install, where DSH uses ~/.dsh.
+function resolveDshHome(explicitPath) {
+  const envHome = typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME.trim().length > 0
+    ? process.env.DSH_HOME
+    : '';
+  let chosen = path.join(os.homedir(), '.dsh');
+  let source = 'DSH default (~/.dsh)';
+  if (envHome) { chosen = envHome; source = '$DSH_HOME'; }
+  if (explicitPath) { chosen = explicitPath; source = '--dsh-home'; }
+  if (chosen === '~') { chosen = os.homedir(); }
+  else if (chosen.startsWith('~/') || chosen.startsWith('~\\')) { chosen = path.join(os.homedir(), chosen.slice(2)); }
+  // DSH itself would resolve a relative home against the cwd; a validator must not silently
+  // check some other directory, so report it and let V7 fail loudly (same as the .ps1/.sh).
+  return { home: path.resolve(chosen), source: source, absolute: path.isAbsolute(chosen) };
+}
+
 // ------------------------------------------------------- counters and reporting
 let passed = 0;
 let warned = 0;
@@ -123,7 +150,9 @@ function check(id, desc, ok, detail) {
   report(id, desc, 'FAIL', detail);
 }
 
+const dshHomeResolved = resolveDshHome(optDshHome);
 console.log('bundle: ' + bundle);
+console.log('dsh home: ' + dshHomeResolved.home + ' (' + dshHomeResolved.source + ')');
 console.log('');
 
 // ----------------------------------------------------- js-yaml discovery (V1)
@@ -131,14 +160,11 @@ function findJsYaml() {
   const candidates = [];
   if (optJsYaml) { candidates.push(optJsYaml); }
   if (process.env.DSH_JS_YAML) { candidates.push(process.env.DSH_JS_YAML); }
-  const dshHome = optDshHome || process.env.DSH_HOME || '';
-  // Tool discovery also probes the conventional DSH home when DSH_HOME is not exported.
-  // V7 still requires an explicit DSH_HOME: the mirror path must never be guessed.
-  const conventionalDshHome = process.env.USERPROFILE
-    ? path.join(process.env.USERPROFILE, '.dsh')
-    : (process.env.HOME ? path.join(process.env.HOME, '.dsh') : '');
+  // Tool discovery probes the resolved DSH home first, then the platform default (js-yaml
+  // and node ship with the DSH runtime). V7 resolves the mirror path through the same
+  // function, so discovery and the check never disagree about where the home is.
   const homeCandidates = [];
-  for (const h of [dshHome, conventionalDshHome]) {
+  for (const h of [resolveDshHome(optDshHome).home, path.join(os.homedir(), '.dsh')]) {
     if (h && homeCandidates.indexOf(h) < 0) { homeCandidates.push(h); }
   }
   for (const h of homeCandidates) {
@@ -350,12 +376,15 @@ check('V6', 'SKILL.md exists with frontmatter name/description and name == dir n
 // it is a second source of truth that silently drifts -- exactly what this blocks.
 let v7ok = false;
 let v7detail = '';
-let dshHome = optDshHome || process.env.DSH_HOME || '';
+const dshHome = dshHomeResolved.home;
+// Only the fallback to ~/.dsh carries residual risk (a DSH launched with an explicit
+// configured home uses that instead), so state it in the detail instead of hiding it.
+const dshHomeNote = dshHomeResolved.source === 'DSH default (~/.dsh)'
+  ? ' [DSH_HOME unset -> resolved to the DSH default ~/.dsh; pass --dsh-home if this DSH instance uses another home]'
+  : '';
 
-if (!dshHome) {
-  v7detail = 'DSH_HOME is not set (and no --dsh-home override was given)';
-} else if (!path.isAbsolute(dshHome)) {
-  v7detail = 'DSH_HOME is not an absolute path: ' + dshHome;
+if (!dshHomeResolved.absolute) {
+  v7detail = 'resolved DSH home is not an absolute path: ' + dshHome + ' (from ' + dshHomeResolved.source + '; pass an absolute --dsh-home)';
 } else {
   const mirrorRoot = path.join(dshHome.replace(/[\\/]+$/, ''), 'agent-preset-bundles', 'dsh-taskforce');
   const mirrorSkill = path.join(mirrorRoot, 'skills', 'agent-team-protocol', 'SKILL.md');
@@ -409,6 +438,7 @@ if (!dshHome) {
     }
   }
 }
+if (dshHomeNote && v7detail.indexOf('[DSH_HOME unset') < 0) { v7detail = v7detail + dshHomeNote; }
 check('V7', 'mirror is a link pointing back to this bundle (skill path resolves)', v7ok, v7detail);
 
 // --------------------------------------------------- V8: required plugin rows

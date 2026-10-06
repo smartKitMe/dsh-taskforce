@@ -16,7 +16,7 @@
   Exit codes
     0  mirror is (or now is) a junction pointing at this bundle
     1  conflict, or -Check found the mirror missing/wrong (nothing was modified)
-    2  environment / usage error (DSH_HOME unset or relative, bundle root missing)
+    2  environment / usage error (unusable DSH home, bundle root missing)
 
   Behavior matrix
     missing                    -> create parent dir + junction
@@ -74,13 +74,26 @@ if (-not (Test-Path -LiteralPath (Join-Path $bundle 'cordis.patch.yml') -PathTyp
     Fail "not a preset bundle (cordis.patch.yml not found): $bundle" 2
 }
 
-# ------------------------------------------------------------------ DSH_HOME
+# ------------------------------------------------------------------ DSH home
+# Resolution mirrors DSH's own @deepseek-ai/dsh-home-paths: $DSH_HOME > $env:USERPROFILE\.dsh,
+# where an empty/whitespace $env:DSH_HOME counts as unset and a leading `~` is expanded.
+# Following DSH's precedence is not a guess: refusing to run when DSH_HOME is unset would
+# lock out users whose DSH is perfectly happy with the default home.
 $dshHome = $env:DSH_HOME
+$dshHomeSource = '$DSH_HOME'
 if ([string]::IsNullOrWhiteSpace($dshHome)) {
-    Fail 'DSH_HOME is not set. Refusing to guess: an unset DSH_HOME would degrade the mirror path to a root-relative path. Set $env:DSH_HOME and re-run.' 2
+    if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        Fail 'neither DSH_HOME nor USERPROFILE is set; pass -MirrorPath <absolute path>' 2
+    }
+    $dshHome = Join-Path $env:USERPROFILE '.dsh'
+    $dshHomeSource = 'DSH default (%USERPROFILE%\.dsh)'
+    Write-Host 'note: DSH_HOME is unset -> using the DSH default %USERPROFILE%\.dsh (DSH resolves the same way).'
+    Write-Host '      If this DSH instance was started with a different home, set $env:DSH_HOME and re-run.'
 }
+if ($dshHome -eq '~') { $dshHome = $env:USERPROFILE }
+elseif ($dshHome.StartsWith('~/') -or $dshHome.StartsWith('~\')) { $dshHome = Join-Path $env:USERPROFILE $dshHome.Substring(2) }
 if (-not [System.IO.Path]::IsPathRooted($dshHome)) {
-    Fail "DSH_HOME is not an absolute path: $dshHome" 2
+    Fail "DSH home is not an absolute path: $dshHome (from $dshHomeSource)" 2
 }
 $dshHome = [System.IO.Path]::GetFullPath($dshHome).TrimEnd('\')
 
@@ -96,6 +109,7 @@ $mirror = [System.IO.Path]::GetFullPath($mirror).TrimEnd('\')
 $mirrorParent = Split-Path -Parent $mirror
 
 Write-Host "bundle source : $bundle"
+Write-Host "dsh home      : $dshHome ($dshHomeSource)"
 Write-Host "mirror target : $mirror"
 
 # ------------------------------------------------------------- current state

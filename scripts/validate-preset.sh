@@ -31,16 +31,24 @@ find_node() {
         printf '%s\n' "$DSH_NODE"
         return 0
     fi
-    dsh_home=${DSH_HOME:-}
-    if [ -n "$dsh_home" ] && [ -d "$dsh_home/dsh-runtimes" ]; then
-        for candidate in "$dsh_home"/dsh-runtimes/*/dependencies/node/bin/node \
-                         "$dsh_home"/dsh-runtimes/*/dependencies/node/node; do
+    # Probe every plausible DSH home: $DSH_HOME (skipped when blank, exactly like DSH) and
+    # the platform default ~/.dsh. The runtime ships its own node which is frequently NOT on
+    # PATH, so probing only PATH would make this launcher unusable on a default install.
+    for home in "${DSH_HOME:-}" "${HOME:-}/.dsh"; do
+        case "$home" in
+            ''|'/'|'/.dsh') continue ;;
+        esac
+        if [ ! -d "$home/dsh-runtimes" ]; then
+            continue
+        fi
+        for candidate in "$home"/dsh-runtimes/*/dependencies/node/bin/node \
+                         "$home"/dsh-runtimes/*/dependencies/node/node; do
             if [ -x "$candidate" ]; then
                 printf '%s\n' "$candidate"
                 return 0
             fi
         done
-    fi
+    done
     if command -v node >/dev/null 2>&1; then
         command -v node
         return 0

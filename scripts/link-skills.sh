@@ -80,20 +80,48 @@ if [ ! -f "$bundle/cordis.patch.yml" ]; then
     fail "not a preset bundle (cordis.patch.yml not found): $bundle" 2
 fi
 
-# ------------------------------------------------------------------ DSH_HOME
-dsh_home=${dsh_home_arg:-${DSH_HOME:-}}
-if [ -z "$dsh_home" ]; then
-    fail 'DSH_HOME is not set. Refusing to guess: an unset DSH_HOME would resolve the mirror path relative to / instead of your DSH home. Set DSH_HOME (e.g. export DSH_HOME="$HOME/.dsh") and re-run.' 2
+# ------------------------------------------------------------------ DSH home
+# Resolution mirrors DSH's own @deepseek-ai/dsh-home-paths (read from the shipped
+# source):  --dsh-home  >  $DSH_HOME  >  ~/.dsh, where an empty/whitespace $DSH_HOME
+# counts as unset and a leading `~` is expanded. Following DSH's precedence is not a
+# guess: refusing to run when DSH_HOME is unset would lock out every Linux/macOS user
+# whose DSH is perfectly happy with ~/.dsh (DSH itself never requires the variable).
+dsh_home=${dsh_home_arg:-}
+if [ -n "$dsh_home" ]; then
+    dsh_home_source='--dsh-home'
+elif [ -n "${DSH_HOME:-}" ] && [ -n "$(printf '%s' "${DSH_HOME}" | tr -d '[:space:]')" ]; then
+    dsh_home=${DSH_HOME}
+    dsh_home_source='$DSH_HOME'
+else
+    if [ -z "${HOME:-}" ]; then
+        fail 'neither DSH_HOME nor HOME is set; pass --dsh-home <absolute path>' 2
+    fi
+    dsh_home="$HOME/.dsh"
+    dsh_home_source='DSH default (~/.dsh)'
 fi
+
+case "$dsh_home" in
+    '~') dsh_home=${HOME:-} ;;
+    # The pattern must be quoted: an unquoted `~/` in ${var#...} undergoes tilde
+    # expansion itself, which would search for "$HOME/" inside "~/.dsh" and never match.
+    '~/'*) dsh_home="${HOME:-}/${dsh_home#'~/'}" ;;
+esac
+
 case "$dsh_home" in
     /*) : ;;
-    *) fail "DSH_HOME is not an absolute path: $dsh_home" 2 ;;
+    *) fail "DSH home is not an absolute path: $dsh_home (from $dsh_home_source); pass an absolute --dsh-home" 2 ;;
 esac
 dsh_home=$(printf '%s' "$dsh_home" | sed 's:/*$::')
 # Canonicalise when it already exists; do not require it to exist yet (the mirror
 # parent directory is created below when missing, matching the .ps1 behaviour).
 if [ -d "$dsh_home" ]; then
     dsh_home=$(CDPATH='' cd -- "$dsh_home" && pwd -P)
+fi
+
+if [ "$dsh_home_source" = 'DSH default (~/.dsh)' ]; then
+    echo 'note: DSH_HOME is unset -> using the DSH default ~/.dsh (DSH resolves the same way).'
+    echo '      If this DSH instance was started with a different home (desktop config or'
+    echo '      --dsh-home), pass it explicitly: --dsh-home <path>.'
 fi
 
 # ---------------------------------------------------------------- mirror path
@@ -105,6 +133,7 @@ esac
 mirror=$(printf '%s' "$mirror" | sed 's:/*$::')
 
 echo "bundle source : $bundle"
+echo "dsh home      : $dsh_home ($dsh_home_source)"
 echo "mirror target : $mirror"
 
 # ------------------------------------------------------------ current state

@@ -57,6 +57,8 @@
   This is the Windows implementation. Linux/macOS: run scripts/validate-preset.sh, a
   POSIX launcher for the cross-platform twin scripts/validate-preset.mjs (same checks,
   same verdicts, same exit code); there V7 requires a symlink instead of a junction.
+  DSH home precedence (all implementations): -DshHome > $env:DSH_HOME > $env:USERPROFILE\.dsh,
+  matching DSH's @deepseek-ai/dsh-home-paths (an empty $env:DSH_HOME counts as unset).
   IMPORTANT: keep this file saved as UTF-8 **with BOM**. The V11 rules contain
   Chinese literals and Windows PowerShell 5.1 decodes BOM-less sources as ANSI,
   which would corrupt them (V11 self-detects that and FAILs instead of passing).
@@ -74,7 +76,7 @@ param(
     # (<DSH_HOME>\profiles\node_modules\js-yaml or <DSH_HOME>\dsh-runtimes\*\dependencies\node_modules\js-yaml),
     # then ask node itself (require.resolve). Never hardcode one machine's layout.
     [string]$JsYamlPath,
-    # V7 testing hook: pretend DSH_HOME is this path (default: $env:DSH_HOME).
+    # V7/testing hook: use this DSH home (default: $env:DSH_HOME, else $env:USERPROFILE\.dsh).
     # Lets the junction-vs-real-copy branches be tested without touching the real mirror.
     [string]$DshHome,
     # V11(c): also flag a "maxMembers 8/16" pair that carries no disclosure qualifier.
@@ -124,7 +126,24 @@ $yamlPath = Join-Path $bundle 'cordis.patch.yml'
 $skillMd = Join-Path (Join-Path $bundle 'skills\agent-team-protocol') 'SKILL.md'
 $readmePath = Join-Path $bundle 'README.md'
 
+# ---------------------------------------------------- DSH home (shared by V7)
+# Mirrors DSH's own @deepseek-ai/dsh-home-paths: -DshHome > $env:DSH_HOME > $env:USERPROFILE\.dsh,
+# with an empty/whitespace $env:DSH_HOME treated as unset and a leading `~` expanded.
+$dshHomeResolved = $DshHome
+$dshHomeSource = '-DshHome'
+if ([string]::IsNullOrWhiteSpace($dshHomeResolved)) {
+    $dshHomeResolved = $env:DSH_HOME
+    $dshHomeSource = '$DSH_HOME'
+}
+if ([string]::IsNullOrWhiteSpace($dshHomeResolved)) {
+    $dshHomeResolved = Join-Path $env:USERPROFILE '.dsh'
+    $dshHomeSource = 'DSH default (%USERPROFILE%\.dsh)'
+}
+if ($dshHomeResolved -eq '~') { $dshHomeResolved = $env:USERPROFILE }
+elseif ($dshHomeResolved.StartsWith('~/') -or $dshHomeResolved.StartsWith('~\')) { $dshHomeResolved = Join-Path $env:USERPROFILE $dshHomeResolved.Substring(2) }
+
 Write-Host "bundle: $bundle"
+Write-Host "dsh home: $dshHomeResolved ($dshHomeSource)"
 Write-Host ""
 
 # ------------------------------------------------- V1: YAML parses (js-yaml)
@@ -457,13 +476,9 @@ function Normalize-LinkPath {
 
 $v7ok = $false
 $v7detail = ''
-$dshHome = $DshHome
-if ([string]::IsNullOrWhiteSpace($dshHome)) { $dshHome = $env:DSH_HOME }
-if ([string]::IsNullOrWhiteSpace($dshHome)) {
-    $v7detail = 'DSH_HOME is not set (and no -DshHome override was given)'
-}
-elseif (-not [System.IO.Path]::IsPathRooted($dshHome)) {
-    $v7detail = "DSH_HOME is not an absolute path: $dshHome"
+$dshHome = $dshHomeResolved
+if (-not [System.IO.Path]::IsPathRooted($dshHome)) {
+    $v7detail = "resolved DSH home is not an absolute path: $dshHome (from $dshHomeSource)"
 }
 else {
     $mirrorRoot = Join-Path (Join-Path $dshHome.TrimEnd('\') 'agent-preset-bundles') 'dsh-taskforce'
@@ -497,6 +512,9 @@ else {
     elseif (-not $targetMatches) {
         $v7detail = $v7detail + "; junction target '$mTargetRaw' does not resolve to this bundle -> run scripts\link-skills.ps1 (it reports the wrong target instead of overwriting)"
     }
+}
+if ($dshHomeSource -eq 'DSH default (%USERPROFILE%\.dsh)') {
+    $v7detail = $v7detail + ' [DSH_HOME unset -> resolved to the DSH default %USERPROFILE%\.dsh; pass -DshHome if this DSH instance uses another home]'
 }
 Check 'V7' 'mirror is a Junction pointing back to this bundle (skill path resolves)' $v7ok $v7detail
 
