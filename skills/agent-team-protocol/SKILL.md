@@ -1,9 +1,9 @@
 ---
 name: agent-team-protocol
-description: 动态团队（dsh-agent-team）运行手册：28 个 TEAM_* 错误码与触发/处置/依据、容量与限额（maxMembers 本机 profile 8 / 实现默认 16，以运行时为准；maxTasks 256、mailbox 64、消息体 65536 字节）、write_scopes 合法与非法写法（含工作区绝对路径必被拒）、五个岗位模板与成员 5 段回报格式、六要素委派契约、验收 rubric（≥90 PASS / 60–89 返工 / <60 或造假 FAIL）与证据等级三分。Use when working inside the 动态团队 (dsh-agent-team) preset — error codes, capacity limits, member reporting format, write-scope rules, and the acceptance rubric.
+description: 专案组（dsh-taskforce）动态团队运行手册：28 个 TEAM_* 错误码与触发/处置/依据、容量与限额（maxMembers 本机 profile 8 / 实现默认 16，以运行时为准；maxTasks 256、mailbox 64、消息体 65536 字节）、write_scopes 合法与非法写法（含工作区绝对路径必被拒）、五个岗位模板与成员 5 段回报格式、六要素委派契约、验收 rubric（≥90 PASS / 60–89 返工 / <60 或造假 FAIL）与证据等级三分。Use when working inside the 专案组 (dsh-taskforce) preset — error codes, capacity limits, member reporting format, write-scope rules, and the acceptance rubric.
 ---
 
-# 动态团队模式（dsh-agent-team）· 运行手册
+# 专案组（dsh-taskforce）· 动态团队运行手册
 
 > 本手册是 persona 的配套：**persona 写「必须遵守什么」，本手册写「怎么做：工具字段、错误码表、岗位模板、评分表」**。
 > persona 已写死的承重规则（组队准入、任务板先行、写协议、唤醒顺序、预算与终止、安全红线、workflow 治理、降级条款）**本手册不复述**，只给操作层细节与可抄的模板。

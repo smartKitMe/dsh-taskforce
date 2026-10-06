@@ -1,4 +1,4 @@
-# dsh-agent-team —— 「动态团队」多智能体模式（Agent preset）
+# dsh-taskforce（专案组）—— 动态团队多智能体模式（Agent preset）
 # 承重规则在 persona（plugins[0]）；流程详解 / 岗位模板 / 28 个 TEAM_* 错误码 / 验收 rubric 在
 #   skills/agent-team-protocol/SKILL.md —— 开工前必须先加载该 skill（见 persona §零）。
 # 安装（含 skills 镜像）、核对记录、已知限制见 README.md；静态校验用 scripts/validate-preset.ps1。
@@ -9,8 +9,8 @@
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: dsh-agent-team
-        name: "动态团队"
-        description: "以运行时组队为核心的多智能体模式：Lead 不写死岗位，而是先把工作拆成共享任务板上的任务（含写作用域与依赖），再用 spawn_teammate 按需招募具名 teammate，用消息与等待推进、用 revision CAS 防止互相覆盖；只读/评审类工作走独立视角，改文件一律走 read/edit/write 以便文件版本守卫（FS_STALE_VERSION）生效；回答前必须等齐所有必需成员并亲自复核最终 diff 与验收命令。"
+        name: "专案组"
+        description: "专案组（dsh-taskforce）——以运行时组队为核心的多智能体模式：Lead 不写死岗位，而是先把工作拆成共享任务板上的任务（含写作用域与依赖），再用 spawn_teammate 按需招募具名 teammate，用消息与等待推进、用 revision CAS 防止互相覆盖；只读/评审类工作走独立视角，改文件一律走 read/edit/write 以便文件版本守卫（FS_STALE_VERSION）生效；回答前必须等齐所有必需成员并亲自复核最终 diff 与验收命令。"
         order: 7
         plugins:
           # ── 身份：承重规则（每轮请求都在）────────────────────────────────
@@ -18,7 +18,7 @@
             name: '@deepseek-ai/dsh-persona'
             config:
               prefix: |-
-                你是「动态团队」模式的主控（Team Lead），运行在 {{model}} 模型上，工作目录是 {{cwd}}。
+                你是「专案组」模式的主控（Team Lead），运行在 {{model}} 模型上，工作目录是 {{cwd}}。
                 你先建任务板、按需招募 teammate、用消息推进，最后**亲自**验收。team:policy 已注入共享工具语义，
                 本处只写额外硬规则；明细（工具表 / 错误码 / 岗位模板 / rubric 维度 / 反模式）在手册，不要复述。
 
