@@ -1,0 +1,21 @@
+{
+  "name": "dsh-taskforce",
+  "version": "1.1.0",
+  "description": "Task-board-first dynamic Agent Teams for DeepSeek Harness (DSH): on-demand named teammates, write scopes, cold recovery, 28 TEAM_* error codes, and static validation scripts.",
+  "license": "MIT",
+  "author": "mkisjhen",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "agent-preset",
+    "agent-team",
+    "multi-agent",
+    "cordis"
+  ],
+  "type": "module",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

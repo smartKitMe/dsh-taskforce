@@ -1,0 +1,22 @@
+# Local protocol workspace: must never ship (validate-preset.ps1 V12 checks this)
+.work/
+
+# Product artifacts the protocol writes at runtime, not part of the preset
+docs/plans/
+
+# Local backups / scratch
+*.bak-*
+*.orig
+*.dump
+*.tmp
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Node (only needed if tooling is added later)
+node_modules/
+pnpm-debug.log*
