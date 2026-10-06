@@ -1,4 +1,4 @@
-# Local protocol workspace: must never ship (validate-preset.ps1 V12 checks this)
+# Local protocol workspace: must never ship (validate-preset V12 checks this)
 .work/
 
 # Product artifacts the protocol writes at runtime, not part of the preset

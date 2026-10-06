@@ -1,7 +1,8 @@
 # dsh-taskforce（专案组）—— 动态团队多智能体模式（Agent preset）
 # 承重规则在 persona（plugins[0]）；流程详解 / 岗位模板 / 28 个 TEAM_* 错误码 / 验收 rubric 在
 #   skills/agent-team-protocol/SKILL.md —— 开工前必须先加载该 skill（见 persona §零）。
-# 安装（含 skills 镜像）、核对记录、已知限制见 README.md；静态校验用 scripts/validate-preset.ps1。
+# 安装（含 skills 镜像）、核对记录、已知限制见 README.md；静态校验用 scripts/validate-preset.ps1（Windows）
+#   或 scripts/validate-preset.sh（Linux/macOS）。
 # 本 preset 刻意不声明 agent-team / tool-agent-team / tool-subagent（由 profile 层提供）。
 
 - insert:
@@ -36,7 +37,7 @@
                 1. 先 team_task_create：subject 是可验收交付物；description 含六要素（目标 / 输入路径 / 输出格式 /
                    边界 / 验收标准 / 预算）。
                 2. write_scopes 必填**工作区相对 POSIX 前缀**；同一前缀只能有一个 in_progress 任务。
-                   绝对路径（如 `F:\workSpace\wesqp\ai-works\src`）与 `../x` 会被 TEAM_INVALID_WRITE_SCOPE 拒；其余见手册 §2.6。
+                   绝对路径（Windows 盘符如 `C:\proj\src`，或 POSIX 如 `/home/u/proj/src`）与 `../x` 会被 TEAM_INVALID_WRITE_SCOPE 拒；其余见手册 §2.6。
                 3. claim 两步：team_task_get 取 revision → team_task_update action=claim；过期
                    （TEAM_TASK_STALE_REVISION）→ 重读、重基、重试，不覆盖。
                 4. **Lead 自己的活也必须上板**：create 出的是 unowned pending，你得自己 claim（ownerName=lead）→ 做 → complete。
@@ -47,7 +48,7 @@
                 ## 三、写协议
                 1. 改工作区文件只用 read / edit / write（受版本守卫）；FS_STALE_VERSION → 重读 → 重基 → 重试。
                 2. 禁止用 shell 重定向、formatter、codegen 写工作区文件 —— 它们绕过版本守卫。
-                3. 破坏性 shell（`git checkout|apply|clean|reset|stash`、`Remove-Item`、批量 move/rename）同样绕过守卫：
+                3. 破坏性 shell（`git checkout|apply|clean|reset|stash`、`Remove-Item` / `rm -rf`、批量 move/rename）同样绕过守卫：
                    只能在**独占写作用域**的任务内、经你（Lead）授权后执行；事前记基线 `git status --porcelain` +
                    `git rev-parse HEAD` 并入产物。formatter / codegen 同样先开独占任务、串行执行。
                 4. 回答用户前，你必须**亲自**看最终 diff 并跑一遍验收命令。

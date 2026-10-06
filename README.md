@@ -68,29 +68,29 @@ DSH 自带的 `desktop` / `web` profile 通常已包含该层（本项目的核�
 | Windows | `scripts/link-skills.ps1`（目录 **junction**） | `scripts/validate-preset.ps1`（Windows PowerShell 5.1 / pwsh 7） |
 | Linux / macOS | `scripts/link-skills.sh`（**symlink**，POSIX sh） | `scripts/validate-preset.sh`（launcher）→ `scripts/validate-preset.mjs` |
 
-- **两个校验器语义等价**：对同一 bundle 逐项判定（`PASS/FAIL V1..V12`）与退出码一致，**只有 V7 的描述词不同**（Windows 要求 junction、POSIX 要求 symlink）。已在 Windows（junction）与 Linux（symlink，`/bin/sh` = dash）两侧实测。
-- **node 与 js-yaml 无需手工安装**，二者由 DSH 运行时自带。脚本自行发现：node 按 `$DSH_NODE` → `<DSH_HOME>/dsh-runtimes/*/dependencies/node/bin/node` → `PATH`；js-yaml 按 `--js-yaml` / `$DSH_JS_YAML` → `<DSH_HOME>/profiles/node_modules/js-yaml` → `<DSH_HOME>/dsh-runtimes/*/dependencies/node_modules/js-yaml` → `~/.dsh/...` → `require.resolve`。
-- **`DSH_HOME` 必须显式设置**（Linux/macOS 通常 `export DSH_HOME="$HOME/.dsh"`）：镜像路径**不猜** —— 未设置时链接脚本退出码 `2`、校验器 `V7` FAIL。（下文的 `%DSH_HOME%` 是 Windows 写法，POSIX 即 `$DSH_HOME`。）
+- **两个校验器语义等价**：对同一 bundle 逐项判定（`PASS/FAIL V1..V12`）与退出码一致，**只有 V7 的描述词不同**（Windows 要求 junction、POSIX 要求 symlink）。已在 Windows（junction）与 Linux（symlink，`/bin/sh` = dash）两侧实测；macOS 走同一套 POSIX 代码路径，但**未单独实测**。
+- **node 与 js-yaml 无需手工安装**，二者由 DSH 运行时自带。脚本自行发现：node 按 `$DSH_NODE` → `<DSH_HOME>/dsh-runtimes/*/dependencies/node/bin/node` → `PATH`；js-yaml 按 `--js-yaml` / `$DSH_JS_YAML` → `<DSH_HOME>/profiles/node_modules/js-yaml` → `<DSH_HOME>/dsh-runtimes/*/dependencies/node_modules/js-yaml` → `require.resolve`。`DSH_HOME` 未设置时，两者都会继续探测默认 home `~/.dsh`（`%USERPROFILE%\.dsh`）下的同样位置。
+- **DSH home 解析顺序与 DSH 本体一致**：显式 `--dsh-home` / `-DshHome` → `$DSH_HOME` → `~/.dsh`（Windows：`%USERPROFILE%\.dsh`；空/纯空白的 `$DSH_HOME` 视为未设置）。脚本会把**实际使用的 home 与来源**打印出来；若你的 DSH 用别的 home（desktop 配置或启动参数），请显式传入。（下文的 `%DSH_HOME%` 是 Windows 写法，POSIX 即 `$DSH_HOME`。）
 - **Windows 也可以跑 `.sh` 校验器**（只要有 node）；但**不要**用 Git Bash 的 `ln -s` 建镜像 —— 没有 `MSYS=winsymlinks:nativestrict` 时它会**悄悄复制**成真实目录，正好触发 V7 要拦的漂移。Windows 一律用 `.ps1`。
 
 ## 安装（三步：`install_bundle` → `link-skills` → `validate`）
 
-安装动作**只有** `install_bundle` 一个；后两步是补充（junction 镜像、静态校验），不是安装包。
+安装动作**只有** `install_bundle` 一个；后两步是补充（镜像链接、静态校验），不是安装包。
 
 ### 1) `install_bundle`：`target` 指向**工作区**里的 bundle 目录
 
 ```
-plugin_manager: install_bundle   target=<本仓库的绝对路径>   # 例：D:\src\dsh-taskforce
+plugin_manager: install_bundle   target=<本仓库的绝对路径>   # Windows 例：D:\src\dsh-taskforce；POSIX 例：/home/you/src/dsh-taskforce
 ```
 
 - `target` 必须是**工作区里的 bundle 源码目录**（即上例），**不要**指向
-  `%DSH_HOME%\agent-preset-bundles\dsh-taskforce` 这个镜像路径。
+  `%DSH_HOME%\agent-preset-bundles\dsh-taskforce`（POSIX：`$DSH_HOME/agent-preset-bundles/dsh-taskforce`）这个镜像路径。
 - 改 profile 的 `package.json`、跑 pnpm、把本 bundle 登记进 `bundles` 列表，**全部是 `install_bundle` 的职责**。
 - 所以**不要手工改 profile 的 `package.json` / `cordis.patch.yml`，不要手工在 `$DSH_HOME` 下创建包，
   也不要在 profile 目录手跑 pnpm** —— 手工插手会绕过 `install_bundle` 的登记与依赖解析，
   产出"文件写了但 Loader 不认"的僵局。（以上是加载体 / `plugin_manager` 安装说明的含义复述。）
 
-### 2) `link-skills.ps1`：为 skills 路径建立 junction（定向 workaround，不是安装）
+### 2) `link-skills`：为 skills 路径建立镜像链接（Windows junction / POSIX symlink；定向 workaround，不是安装）
 
 ```powershell
 # Windows（在 bundle 目录下执行）
@@ -103,21 +103,27 @@ sh scripts/link-skills.sh          # 建立 symlink；--check 只检查，--dry-
 ```
 
 - **为什么需要**：`cordis.patch.yml` 里的 skill 目录写的是
-  `customSkillDirs: - !!js dshHomePath('agent-preset-bundles/dsh-taskforce/skills')`，
-  它**必然**解析到 `%DSH_HOME%\agent-preset-bundles\dsh-taskforce\skills`
-  —— 这是 DSH 既有的 `dshHomePath('agent-preset-bundles/<bundle>/skills')` 约定，**不是**工作区源码目录。
+  `customSkillDirs: - !!js dshHomePath('agent-preset-bundles/dsh-taskforce/skills')`。
+  `dshHomePath(...)` 是 DSH 提供的路径助手（实现即 `path.join(resolveDshHome(), ...)`，解析优先级
+  **显式配置 → `$DSH_HOME` → `~/.dsh`**，平台中立），所以该表达式**必然**解析到
+  `%DSH_HOME%\agent-preset-bundles\dsh-taskforce\skills`
+  （POSIX：`$DSH_HOME/agent-preset-bundles/dsh-taskforce/skills`）—— 它在 **DSH home 下**，**不是**工作区源码目录。
+  > 说明：`agent-preset-bundles/<bundle>` 这个子目录名是**本项目选定的镜像位置**，不是 DSH 的内置约定
+  > （DSH 本体不感知该名字，只要求该路径存在、且其中的 `skills/` 里有手册）。选它是为了与本机 DSH home 下
+  > 已有的 preset bundle 目录保持一致。
 - **脚本做的事**：把该镜像路径建成**指向工作区源码目录的链接**（Windows：junction；Linux/macOS：symlink），让上面的路径表达式可解析，
   同时保持**单一事实源**。这是为匹配既有 `dshHomePath(...)` 约定的**定向 workaround**；
   `install_bundle` 不负责这条路径，因此它**不是安装动作**。
 - **幂等**：已存在且指向正确 → no-op 并打印 `OK`；若该路径是**真实目录副本**（非链接）→
   报 `CONFLICT` 并要求人工决策（备份 + 重建），**不静默覆盖**；
-  `%DSH_HOME%` 未定义或是相对路径 → 退出码 2，不猜测、不退化成根目录路径。
-- `-Check`（只检查：正确链接 = 退出码 0，缺失/指错 = 1）与 `-WhatIf`（只打印计划，不落盘）。
-- **不要用复制（`Copy-Item`）维护第二份副本。** 两条理由都是**静默**故障：
+  DSH home 不可用（相对路径）→ 退出码 2，不退化成根目录路径；`DSH_HOME` **未定义或为空白**时按
+  DSH 自己的优先级回退到 `~/.dsh`（`%USERPROFILE%\.dsh`），并打印实际使用的是哪一个。
+- `-Check` / `--check`（只检查：正确链接 = 退出码 0，缺失/指错 = 1）与 `-WhatIf` / `--dry-run`（只打印计划，不落盘）。
+- **不要用复制（`Copy-Item` / `cp -r`）维护第二份副本。** 两条理由都是**静默**故障：
   1. **静默漂移**：改了工作区源码里的 `SKILL.md`，会话读到的仍是旧副本，没有任何报错；
   2. **静默降级**：skill 缺失时 preset **仍能正常加载**（协议退化为 persona 内的规则），表面无错、实际手册没生效。
 
-  缺镜像不会让 preset 失效，但会让你**以为**手册在生效 —— 这正是必须用 junction 而不是复制的原因。
+  缺镜像不会让 preset 失效，但会让你**以为**手册在生效 —— 这正是必须用链接（junction / symlink）而不是复制的原因。
 
 ### 3) 静态校验
 
@@ -157,7 +163,7 @@ plugin_manager: set_bundle   target=dsh-taskforce   enabled=true
 | 新会话 → Agent 预设 | 出现「专案组」（项目名 `dsh-taskforce`） |
 | 该会话工具列表 | 9 个 Team 工具齐全（`spawn_teammate` / `team_task_*` / `send_message` / `wait_agent` / `interrupt_agent` / `list_agents`） |
 | 该会话 skill 列表 | 出现 `agent-team-protocol` |
-| 镜像路径可解析 | Windows：`Test-Path "$env:DSH_HOME\agent-preset-bundles\dsh-taskforce\skills\agent-team-protocol\SKILL.md"` 为 `True` 且该路径是 **junction**（`(Get-Item ...).LinkType -eq 'Junction'`）；Linux/macOS：`[ -L "$DSH_HOME/agent-preset-bundles/dsh-taskforce" ]` 为真且 `readlink -f` 指回本 bundle。**两者都不是第二份真实副本** |
+| 镜像路径可解析 | Windows：`Test-Path "$env:DSH_HOME\agent-preset-bundles\dsh-taskforce\skills\agent-team-protocol\SKILL.md"` 为 `True` 且该路径是 **junction**（`(Get-Item ...).LinkType -eq 'Junction'`）；Linux/macOS：`[ -L "$DSH_HOME/agent-preset-bundles/dsh-taskforce" ]` 为真且其链接目标解析回本 bundle（例：Linux `readlink -f "$DSH_HOME/agent-preset-bundles/dsh-taskforce"`）。**两者都不是第二份真实副本** |
 | 静态校验 | Windows：`powershell -NoProfile -File scripts\validate-preset.ps1`；Linux/macOS：`sh scripts/validate-preset.sh`。逐项 `PASS/FAIL`，退出码 `0`；**V12 需要交付目录已无 `.work/`**，故集成收尾前 V12 FAIL 属预期 |
 | 负向校验 | `link-skills.ps1 -Check` / `link-skills.sh --check`：镜像缺失或指错时应以退出码 `1` 报错，而不是静默通过；把镜像换成**真实目录副本**时校验器必须 `FAIL V7` |
 
@@ -179,6 +185,7 @@ plugin_manager: set_bundle   target=dsh-taskforce   enabled=true
               backgroundMode: continuable
               maxDepth: 1
               toolFilter:
+                # Windows 用 pwsh；Linux/macOS 换成 bash（本 preset 按平台只启用其中一个 shell 行）
                 allow: [pwsh, read, glob, grep, job_list, job_output, job_kill, todo_write, skill]
               persona: |-
                 你是独立评审员。你只报告，不修改：任何文件写入都不是你的产出。
@@ -194,7 +201,7 @@ plugin_manager: set_bundle   target=dsh-taskforce   enabled=true
 
 ## 已知限制（设计时必须接受）
 
-- **写作用域只是提示**，从不阻止任何操作；Bash / formatter / codegen 会绕过文件版本守卫。
+- **写作用域只是提示**，从不阻止任何操作；shell（`pwsh` / `bash`）、formatter、codegen 会绕过文件版本守卫。
 - 所有成员**共享同一个 cwd**，没有 worktree、没有文件锁、没有 merge 冲突检测。
 - **并行编制容量**：`maxMembers` 本机 profile 配置为 **8**、实现默认 **16**，**以运行时为准**
   （接近上限即收敛任务、不再招人，不要按"固定名额"做规划）；招人超限报 `TEAM_MEMBER_LIMIT`。

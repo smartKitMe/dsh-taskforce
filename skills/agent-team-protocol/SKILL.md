@@ -129,9 +129,10 @@ list → get(拿 revision) → claim → 干活 → complete
 
 | 合法示例 | 非法示例 |
 |---|---|
-| `src/agents`、`docs/plans/x.md`、`src/**`、`a/b-c/d` | `F:\workSpace\wesqp\ai-works\src`、`/abs/x`、`../x`、`.`、`./`、`` |
+| `src/agents`、`docs/plans/x.md`、`src/**`、`a/b-c/d` | `C:\proj\src`（Windows 盘符）、`/abs/x`、`../x`、`.`、`./`、`` |
 
-> **本机 cwd 是 `F:\workSpace\wesqp\ai-works`，Lead 天然想写 Windows 绝对路径 → 必被拒。**
+> **绝对路径一律被拒**：Windows 盘符（`C:\...`）与 POSIX 绝对路径（`/abs/x`）都会报
+> `TEAM_INVALID_WRITE_SCOPE`——Lead 很容易顺手写绝对路径。
 > 统一写成工作区相对 POSIX 前缀（如上表左侧）。这是本 preset 最高频的机械报错来源。
 
 ### 2.7 硬规则
@@ -241,7 +242,7 @@ workflow 是否被用作写路径的旁路。
 
 | # | 要素 | 合格写法 | 反例 |
 |---|---|---|---|
-| 1 | 目标（可验证，不是主题） | 「让 `validate-preset.ps1` 对当前 bundle 输出全 PASS」 | ✗「研究一下供应链」 |
+| 1 | 目标（可验证，不是主题） | 「让 `validate-preset`（Windows `.ps1` / Linux、macOS `.sh`）对当前 bundle 输出全 PASS」 | ✗「研究一下供应链」 |
 | 2 | 输入与路径 | 给出文件绝对/相对路径、上游产物、行号 | ✗ 让对方自己找 |
 | 3 | 输出格式（严格结构 + 必须字段） | 落盘路径 + 必须字段 + 5 段回报格式 | ✗「写个报告」 |
 | 4 | 边界（不要做什么 + 写作用域） | 工作区相对 POSIX 前缀（见 2.6）+ 禁区清单 | ✗ 不说边界 → 越权改动 |
@@ -295,7 +296,7 @@ docs/plans/<需求代号>/
 | 想到就 spawn，先建人后建任务 | 职责重叠、重复劳动 | **先任务板，后招人** |
 | 两个任务写同一路径 | 决策碎片化、互相覆盖 | write scope 互斥；看到 `writeScopeWarnings` 立刻调整 |
 | 用 shell 重定向/formatter/codegen 改文件 | 绕过文件版本守卫 | 一律 read/edit/write；需要时建独占写作用域任务并授权 |
-| write scope 写成 `F:\...` 绝对路径 | 必报 `TEAM_INVALID_WRITE_SCOPE` | 改成工作区相对 POSIX 前缀（见 2.6） |
+| write scope 写成绝对路径（`F:\...` / `/abs/...`） | 必报 `TEAM_INVALID_WRITE_SCOPE` | 改成工作区相对 POSIX 前缀（见 2.6） |
 | 对 inactive 成员连续发消息 | 撑爆 mailbox → `TEAM_MAILBOX_FULL` | 合并成一条摘要，或先唤醒/等待其消化 |
 | 中断/换人后不 `release` owner | 任务永久 in_progress、无人能领 | `reopen` → `release`/`reassign` → `send_message` 唤醒新 owner |
 | 任务板不落盘 | 压缩/恢复后事实源丢失 | 每阶段落一次 `task-board.md`（硬要求） |
