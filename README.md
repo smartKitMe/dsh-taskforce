@@ -21,6 +21,7 @@
 | 承重规则 | `cordis.patch.yml` → `persona.prefix` | 组队准入、任务板先行、写协议、唤醒纪律、委派契约、验证独立性、预算终止、workflow 治理、安全红线 |
 | 操作手册 | `skills/agent-team-protocol/SKILL.md` | 工具速查、28 个错误码、五个岗位模板、六要素契约、评分 rubric、反模式、自检清单 |
 | 工具面 | `cordis.patch.yml` → `plugins` | shell / 文件 / 检索 / 后台 / skill / goal / 计划 / 压缩 / 交互 —— **刻意不含任何 Team 行，也不含 subagent 行** |
+| 校验脚本 | `scripts/` | `validate-preset.ps1`（Windows）/ `validate-preset.sh` + `validate-preset.mjs`（Linux/macOS）：V1–V12 静态校验与退出码；`link-skills.ps1` / `link-skills.sh`：建立 skills 镜像链接 |
 
 ## 工具面：什么被禁用，什么仍在（重要）
 
@@ -60,6 +61,18 @@ Team 运行时（域服务 + 9 个工具 + Web UI）由 **profile 层**提供：
 
 DSH 自带的 `desktop` / `web` profile 通常已包含该层（本项目的核对记录即基于这两个 profile）。
 
+## OS 支持（跨平台）
+
+| 平台 | skills 镜像 | 静态校验 |
+|---|---|---|
+| Windows | `scripts/link-skills.ps1`（目录 **junction**） | `scripts/validate-preset.ps1`（Windows PowerShell 5.1 / pwsh 7） |
+| Linux / macOS | `scripts/link-skills.sh`（**symlink**，POSIX sh） | `scripts/validate-preset.sh`（launcher）→ `scripts/validate-preset.mjs` |
+
+- **两个校验器语义等价**：对同一 bundle 逐项判定（`PASS/FAIL V1..V12`）与退出码一致，**只有 V7 的描述词不同**（Windows 要求 junction、POSIX 要求 symlink）。已在 Windows（junction）与 Linux（symlink，`/bin/sh` = dash）两侧实测。
+- **node 与 js-yaml 无需手工安装**，二者由 DSH 运行时自带。脚本自行发现：node 按 `$DSH_NODE` → `<DSH_HOME>/dsh-runtimes/*/dependencies/node/bin/node` → `PATH`；js-yaml 按 `--js-yaml` / `$DSH_JS_YAML` → `<DSH_HOME>/profiles/node_modules/js-yaml` → `<DSH_HOME>/dsh-runtimes/*/dependencies/node_modules/js-yaml` → `~/.dsh/...` → `require.resolve`。
+- **`DSH_HOME` 必须显式设置**（Linux/macOS 通常 `export DSH_HOME="$HOME/.dsh"`）：镜像路径**不猜** —— 未设置时链接脚本退出码 `2`、校验器 `V7` FAIL。（下文的 `%DSH_HOME%` 是 Windows 写法，POSIX 即 `$DSH_HOME`。）
+- **Windows 也可以跑 `.sh` 校验器**（只要有 node）；但**不要**用 Git Bash 的 `ln -s` 建镜像 —— 没有 `MSYS=winsymlinks:nativestrict` 时它会**悄悄复制**成真实目录，正好触发 V7 要拦的漂移。Windows 一律用 `.ps1`。
+
 ## 安装（三步：`install_bundle` → `link-skills` → `validate`）
 
 安装动作**只有** `install_bundle` 一个；后两步是补充（junction 镜像、静态校验），不是安装包。
@@ -80,18 +93,23 @@ plugin_manager: install_bundle   target=<本仓库的绝对路径>   # 例：D:\
 ### 2) `link-skills.ps1`：为 skills 路径建立 junction（定向 workaround，不是安装）
 
 ```powershell
-# 在 bundle 目录下执行
+# Windows（在 bundle 目录下执行）
 powershell -NoProfile -File scripts\link-skills.ps1
+```
+
+```sh
+# Linux / macOS（在 bundle 目录下执行）
+sh scripts/link-skills.sh          # 建立 symlink；--check 只检查，--dry-run 只打印计划
 ```
 
 - **为什么需要**：`cordis.patch.yml` 里的 skill 目录写的是
   `customSkillDirs: - !!js dshHomePath('agent-preset-bundles/dsh-taskforce/skills')`，
   它**必然**解析到 `%DSH_HOME%\agent-preset-bundles\dsh-taskforce\skills`
   —— 这是 DSH 既有的 `dshHomePath('agent-preset-bundles/<bundle>/skills')` 约定，**不是**工作区源码目录。
-- **脚本做的事**：把该镜像路径建成**指向工作区源码目录的 junction**，让上面的路径表达式可解析，
+- **脚本做的事**：把该镜像路径建成**指向工作区源码目录的链接**（Windows：junction；Linux/macOS：symlink），让上面的路径表达式可解析，
   同时保持**单一事实源**。这是为匹配既有 `dshHomePath(...)` 约定的**定向 workaround**；
   `install_bundle` 不负责这条路径，因此它**不是安装动作**。
-- **幂等**：已存在且指向正确 → no-op 并打印 `OK`；若该路径是**真实目录副本**（非 junction）→
+- **幂等**：已存在且指向正确 → no-op 并打印 `OK`；若该路径是**真实目录副本**（非链接）→
   报 `CONFLICT` 并要求人工决策（备份 + 重建），**不静默覆盖**；
   `%DSH_HOME%` 未定义或是相对路径 → 退出码 2，不猜测、不退化成根目录路径。
 - `-Check`（只检查：正确链接 = 退出码 0，缺失/指错 = 1）与 `-WhatIf`（只打印计划，不落盘）。
@@ -101,10 +119,16 @@ powershell -NoProfile -File scripts\link-skills.ps1
 
   缺镜像不会让 preset 失效，但会让你**以为**手册在生效 —— 这正是必须用 junction 而不是复制的原因。
 
-### 3) `validate-preset.ps1`：静态校验
+### 3) 静态校验
 
 ```powershell
+# Windows
 powershell -NoProfile -File scripts\validate-preset.ps1
+```
+
+```sh
+# Linux / macOS
+sh scripts/validate-preset.sh
 ```
 
 逐项打印 `PASS/FAIL <id>`（V1–V12），任一 FAIL 则退出码 1。
@@ -130,12 +154,12 @@ plugin_manager: set_bundle   target=dsh-taskforce   enabled=true
 |---|---|
 | `plugin_manager: list_bundles` | 出现 `dsh-taskforce`（应来自 `install_bundle` 的自动登记；profile 的 `package.json` / `bundles` 不由手工编辑） |
 | `plugin_manager: list_plugins` | 出现 `preset-dsh-agent-team`，`enabled: true`、`fiberPhase: active` |
-| 新会话 → Agent 预设 | 出现「动态团队」 |
+| 新会话 → Agent 预设 | 出现「专案组」（项目名 `dsh-taskforce`） |
 | 该会话工具列表 | 9 个 Team 工具齐全（`spawn_teammate` / `team_task_*` / `send_message` / `wait_agent` / `interrupt_agent` / `list_agents`） |
 | 该会话 skill 列表 | 出现 `agent-team-protocol` |
-| 镜像路径可解析 | `Test-Path "$env:DSH_HOME\agent-preset-bundles\dsh-taskforce\skills\agent-team-protocol\SKILL.md"` 为 `True`，且该路径是 **junction**（`(Get-Item ...).LinkType -eq 'Junction'`），不是第二份真实副本 |
-| 静态校验 | `powershell -NoProfile -File scripts\validate-preset.ps1` 逐项 `PASS/FAIL`，退出码 `0`；**V12 需要交付目录已无 `.work/`**，故集成收尾前 V12 FAIL 属预期 |
-| 负向校验 | `scripts\link-skills.ps1 -Check`：镜像缺失或指错时应以退出码 `1` 报 `CHECK FAILED`，而不是静默通过 |
+| 镜像路径可解析 | Windows：`Test-Path "$env:DSH_HOME\agent-preset-bundles\dsh-taskforce\skills\agent-team-protocol\SKILL.md"` 为 `True` 且该路径是 **junction**（`(Get-Item ...).LinkType -eq 'Junction'`）；Linux/macOS：`[ -L "$DSH_HOME/agent-preset-bundles/dsh-taskforce" ]` 为真且 `readlink -f` 指回本 bundle。**两者都不是第二份真实副本** |
+| 静态校验 | Windows：`powershell -NoProfile -File scripts\validate-preset.ps1`；Linux/macOS：`sh scripts/validate-preset.sh`。逐项 `PASS/FAIL`，退出码 `0`；**V12 需要交付目录已无 `.work/`**，故集成收尾前 V12 FAIL 属预期 |
+| 负向校验 | `link-skills.ps1 -Check` / `link-skills.sh --check`：镜像缺失或指错时应以退出码 `1` 报错，而不是静默通过；把镜像换成**真实目录副本**时校验器必须 `FAIL V7` |
 
 ## 可选：静态守卫岗（补回机械权限）
 
@@ -199,6 +223,18 @@ plugin_manager: set_bundle   target=dsh-taskforce   enabled=true
 | 启用状态 | 本 preset **当前不在 `desktop` / `web` 任一 profile 的 `bundles` 列表里**（两个 profile 都含 `@deepseek-ai/dsh-experimental-agent-team-profile`）；启用方式见「安装」段 |
 | 热重载差异 | `web` 开了 `patchReload: live`；`desktop` 未开，需新开会话 |
 | 依据标注纪律 | 手册「依据」列逐条标注 `源码` / `文档` / `命名推定`（当前分布 **22 / 6 / 0**，无推定项）：`源码` 只表示"在实现中读到抛出 / reject 站点"，**不等于**在真实会话中触发过；不得把推定写成实测 |
+
+## 命名约定（项目名 vs 内部标识）
+
+| 层 | 值 | 随改名变化？ |
+|---|---|---|
+| 项目 / 仓库 / bundle 包名 | `dsh-taskforce` | ✅ 会（已从 `dsh-agent-team-preset` 改过来） |
+| 预设显示名 | 「专案组」 | ✅ 会 |
+| preset 内部 id（`config.id`） | `dsh-agent-team` | ❌ **保持稳定**：profile 登记、会话状态与日志都引用它 |
+| 插件实例 id | `preset-dsh-agent-team` | ❌ **保持稳定**（`list_plugins` 里显示的名字） |
+| skill 名 / 目录 | `agent-team-protocol` | ❌ **保持稳定**：persona §零 与 `customSkillDirs` 引用它，校验器 V6/V7 也校验它 |
+
+改项目名只需改**目录名、文档与显示名**，不要去动上表后三行的内部标识 —— 改了会让已注册的 profile 指向不存在的插件。
 
 ## 与「固定角色」类 team preset 的差别
 

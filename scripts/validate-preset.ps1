@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Static validation of the dsh-agent-team preset bundle: V1..V12 per canon 5-T1.
+  Static validation of the dsh-taskforce preset bundle: V1..V12.
 
 .DESCRIPTION
   Prints one line per check:  PASS V1 <description>   /   FAIL V1 <description>
@@ -54,6 +54,9 @@
   -StrictMemberShorthand  V11(c): also flag "maxMembers 8/16" style pairs.
 
   Compatibility: Windows PowerShell 5.1 and pwsh 7 (no PS7-only syntax).
+  This is the Windows implementation. Linux/macOS: run scripts/validate-preset.sh, a
+  POSIX launcher for the cross-platform twin scripts/validate-preset.mjs (same checks,
+  same verdicts, same exit code); there V7 requires a symlink instead of a junction.
   IMPORTANT: keep this file saved as UTF-8 **with BOM**. The V11 rules contain
   Chinese literals and Windows PowerShell 5.1 decodes BOM-less sources as ANSI,
   which would corrupt them (V11 self-detects that and FAILs instead of passing).
@@ -64,9 +67,13 @@
 [CmdletBinding()]
 param(
     [string]$BundlePath,
-    # node.exe used for V1/V5 (js-yaml + vm).
-    [string]$NodePath = 'C:\Users\jm\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe',
-    [string]$JsYamlPath = 'C:\Users\jm\.dsh\profiles\node_modules\js-yaml',
+    # node.exe used for V1/V5 (js-yaml + vm). Empty = auto-discover from $env:DSH_HOME
+    # (<DSH_HOME>\dsh-runtimes\*\dependencies\node\bin\node.exe), then from PATH.
+    [string]$NodePath,
+    # js-yaml module directory. Empty = auto-discover from $env:DSH_HOME
+    # (<DSH_HOME>\profiles\node_modules\js-yaml or <DSH_HOME>\dsh-runtimes\*\dependencies\node_modules\js-yaml),
+    # then ask node itself (require.resolve). Never hardcode one machine's layout.
+    [string]$JsYamlPath,
     # V7 testing hook: pretend DSH_HOME is this path (default: $env:DSH_HOME).
     # Lets the junction-vs-real-copy branches be tested without touching the real mirror.
     [string]$DshHome,
@@ -121,6 +128,64 @@ Write-Host "bundle: $bundle"
 Write-Host ""
 
 # ------------------------------------------------- V1: YAML parses (js-yaml)
+# ------------------------------------- tool discovery (V1): do not hardcode paths
+# The DSH runtime ships both node.exe and js-yaml, so resolve them from $env:DSH_HOME
+# first and fall back to PATH / require.resolve. Without this, V1 only worked on the
+# machine the script was written on.
+if ([string]::IsNullOrWhiteSpace($NodePath)) {
+    $nodeCandidates = New-Object System.Collections.ArrayList
+    $dshHomeForTools = $env:DSH_HOME
+    if ([string]::IsNullOrWhiteSpace($dshHomeForTools)) {
+        # Discovery-only fallback: the conventional DSH home. V7 still refuses to guess
+        # the mirror path, but locating the tools must not require an exported variable.
+        if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $dshHomeForTools = Join-Path $env:USERPROFILE '.dsh' }
+        elseif (-not [string]::IsNullOrWhiteSpace($env:HOME)) { $dshHomeForTools = Join-Path $env:HOME '.dsh' }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($dshHomeForTools)) {
+        $rtDir = Join-Path $dshHomeForTools 'dsh-runtimes'
+        if (Test-Path -LiteralPath $rtDir) {
+            foreach ($rt in @(Get-ChildItem -LiteralPath $rtDir -Directory -ErrorAction SilentlyContinue)) {
+                [void]$nodeCandidates.Add((Join-Path $rt.FullName 'dependencies\node\bin\node.exe'))
+                [void]$nodeCandidates.Add((Join-Path $rt.FullName 'dependencies\node\node.exe'))
+            }
+        }
+    }
+    foreach ($cand in $nodeCandidates) {
+        if (Test-Path -LiteralPath $cand -PathType Leaf) { $NodePath = $cand; break }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($JsYamlPath) -and -not [string]::IsNullOrWhiteSpace($env:DSH_JS_YAML)) {
+    $JsYamlPath = $env:DSH_JS_YAML
+}
+if ([string]::IsNullOrWhiteSpace($JsYamlPath)) {
+    $jsCandidates = New-Object System.Collections.ArrayList
+    if (-not [string]::IsNullOrWhiteSpace($dshHomeForTools)) {
+        [void]$jsCandidates.Add((Join-Path $dshHomeForTools 'profiles\node_modules\js-yaml'))
+        $rtDir2 = Join-Path $dshHomeForTools 'dsh-runtimes'
+        if (Test-Path -LiteralPath $rtDir2) {
+            foreach ($rt in @(Get-ChildItem -LiteralPath $rtDir2 -Directory -ErrorAction SilentlyContinue)) {
+                [void]$jsCandidates.Add((Join-Path $rt.FullName 'dependencies\node_modules\js-yaml'))
+            }
+        }
+    }
+    foreach ($cand in $jsCandidates) {
+        if (Test-Path -LiteralPath $cand) { $JsYamlPath = $cand; break }
+    }
+    if ([string]::IsNullOrWhiteSpace($JsYamlPath)) {
+        $probeNode = if ([string]::IsNullOrWhiteSpace($NodePath)) { '' } else { $NodePath }
+        if ($probeNode -eq '') { $cmdProbe = Get-Command node -ErrorAction SilentlyContinue; if ($null -ne $cmdProbe) { $probeNode = $cmdProbe.Source } }
+        if (-not [string]::IsNullOrWhiteSpace($probeNode) -and (Test-Path -LiteralPath $probeNode -PathType Leaf)) {
+            $resolvedJs = & $probeNode -e "try{process.stdout.write(require.resolve('js-yaml'))}catch(e){}" 2>`$null
+            if (-not [string]::IsNullOrWhiteSpace($resolvedJs)) {
+                # require.resolve gives <...>/js-yaml/index.js -> one level up is the module dir
+                $JsYamlPath = Split-Path -Parent ([string]$resolvedJs).Trim()
+            }
+        }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($NodePath)) { $NodePath = 'node (not found)' }
+if ([string]::IsNullOrWhiteSpace($JsYamlPath)) { $JsYamlPath = 'js-yaml (not found: pass -JsYamlPath, set DSH_JS_YAML, or export DSH_HOME)' }
+
 $probeJs = @'
 const fs = require('fs');
 const vm = require('vm');

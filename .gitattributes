@@ -1,0 +1,13 @@
+# Line endings: the repo is stored and checked out as LF everywhere.
+# Why it matters here:
+#   - shell scripts (scripts/*.sh) MUST stay LF, or Linux/macOS bash fails with
+#     "bad interpreter: /usr/bin/env sh^M";
+#   - the PowerShell validator must keep its UTF-8 BOM (tracked as file content,
+#     untouched by these rules) or Windows PowerShell 5.1 decodes it as ANSI and
+#     the Chinese V11 literals silently stop matching.
+* text=auto eol=lf
+*.sh  text eol=lf
+*.mjs text eol=lf
+*.ps1 text eol=lf
+*.yml text eol=lf
+*.md  text eol=lf
